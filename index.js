@@ -5,10 +5,9 @@ const kafka = require("kafka-node");
 // Volante events.
 //
 module.exports = {
-  name: "VolanteKafka",
+  name: 'VolanteKafka',
   init() {
     if (this.configProps && this.enabled) {
-      this.$log("attempting to initialize using config props");
       this.initialize();
     }
   },
@@ -19,8 +18,8 @@ module.exports = {
   },
   props: {
     enabled: true,
-    host: "127.0.0.1",
-    port: 27017,
+    host: '127.0.0.1',
+    port: 9094,
   },
   data() {
     return {
@@ -31,10 +30,10 @@ module.exports = {
     };
   },
   events: {
-    "VolanteKafka.publish"(topic, msg) {
+    'VolanteKafka.publish'(topic, msg) {
       this.publish(...arguments);
     },
-    "VolanteKafka.start"() {
+    'VolanteKafka.start'() {
       this.initialize();
     },
   },
@@ -42,17 +41,30 @@ module.exports = {
     initialize() {
       try {
         let kafkaHost = `${this.host}:${this.port}`;
-        this.$log(`setting up client to ${kafkaHost}`);
+        this.$log(`setting up KafkaClient to ${kafkaHost}`);
         this.client = new kafka.KafkaClient({
-          kafkaHost
+          kafkaHost,
+          connectTimeout: 5000,
+          requestTimeout: 10000,
+          autoConnect: true,
+          connectRetryOptions: {
+            forever: true,
+          }
         });
-        this.producer = new kafka.Producer(this.client);
+        // handle client events
+        this.client.on('close', (err) => {
+          this.$error('KafkaClient error', err.error);
+        });
+        this.client.on('connect', () => {
+          this.$log(`Connected to Kafka at ${kafkaHost}`);
+        });
 
-        // First wait for the producer to be initialized
+        // create producer
+        this.producer = new kafka.Producer(this.client);
+        // handle producer events
         this.producer.on('ready', () => {
           this.$log('ready to send kafka messages');
         });
-
         this.producer.on('error', (err) => {
           this.$error(err);
         });
