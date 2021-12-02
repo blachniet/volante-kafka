@@ -13,6 +13,13 @@ module.exports = {
     groupId: null,                      // specify groupId, default: volante hub name will be used
     clientId: null,                     // specify clientId, default: volante hub name + hostname
     countLogInterval: 10000,            // interval in ms at which to log msg counts
+    publishStar: false,                 // subscribe to all volante events and publish them to kafka
+    publishStarTopic: 'volante',        // topic to use for publishing all volante events
+  },
+  stats: {
+    totalPublishedMessages: 0,
+    totalReceivedMessages: 0,
+    numSubscriptions: 0,
   },
   init() {
     if (this.configProps && this.enabled) {
@@ -28,9 +35,7 @@ module.exports = {
       producer: null,
       consumer: null,
       intervalPublishedMessages: 0,
-      totalPublishedMessages: 0,
       intervalReceivedMessages: 0,
-      totalReceivedMessages: 0,
     };
   },
   events: {
@@ -43,6 +48,14 @@ module.exports = {
     'VolanteKafka.subscribe'(topic, callback) {
       this.subscribe(topic, callback);
     },
+  },
+  updated() {
+    if (this.publishStar) {
+      this.$warn('subcribing to all volante events');
+      // this.$hub.onAll(this.name, (...arguments) => {
+      //   console.log(arguments)
+      // });
+    }
   },
   methods: {
     initialize() {
@@ -79,13 +92,13 @@ module.exports = {
     // publish a message to Kafka
     //
     publish(topic, msg, callback) {
-      // this.$isDebug && this.$debug('publish', topic, msg);
+      this.$isDebug && this.$debug(`publishing message with length ${msg.length} to ${topic}`);
       this.producer.send({
         topic,
         compression: this.compression,
         messages: [{ value: msg }],
       }).then(() => {
-        this.intervalReceivedMessages++;
+        this.intervalPublishedMessages++;
         this.totalPublishedMessages++;
         callback && callback(null);
       }).catch((e) => {
@@ -99,8 +112,10 @@ module.exports = {
     //
     async subscribe(topic, callback) {
       if (this.kafka && callback) {
+        this.$log(`subscribing to topic: ${topic} with groupId: ${this.groupId}`);
+        this.numSubscriptions++;
         // create new consumer for this topic
-        const consumer = this.kafka.consumer({ groupId: this.clientId });
+        const consumer = this.kafka.consumer({ groupId: this.groupId });
         await consumer.connect();
         await consumer.subscribe({ topic });
         await consumer.run({
@@ -114,6 +129,9 @@ module.exports = {
         this.$warn('no kafka to take this subscription or no callback provided');
       }
     },
+    //
+    // periodically log the message counts
+    //
     logCounts() {
       this.$log(`published: ${this.intervalPublishedMessages}|received: ${this.intervalReceivedMessages}`);
       this.intervalPublishedMessages = 0;
@@ -133,6 +151,7 @@ if (require.main === module) {
   if (process.env.volante_VolanteKafka_brokers) {
     hub.emit('VolanteKafka.update', {
       brokers: [process.env.volante_VolanteKafka_brokers],
+      publishStar: true,
     });
   }
   
@@ -140,9 +159,9 @@ if (require.main === module) {
   
   hub.on('VolanteKafka.ready', () => {
     hub.emit('VolanteKafka.subscribe', 'test', (obj) => {
-      console.log(`received message with offset: ${obj.message.offset} - value: ${obj.message.value}`);
+      console.log(`received message with offset: ${obj.message.offset} - value length: ${obj.message.value.length}`);
     });
     hub.emit('VolanteKafka.publish', 'test', 'test string');
+    // hub.emit('VolanteKafka.publish', 'test', require('crypto').randomBytes(100000000));
   });
-  
 }
