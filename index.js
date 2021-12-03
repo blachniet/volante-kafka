@@ -42,7 +42,7 @@ module.exports = {
     'VolanteKafka.start'() {
       this.initialize();
     },
-    'VolanteKafka.publish'(topic, msg) {
+    'VolanteKafka.publish'(topic, msg, callback) {
       this.publish(...arguments);
     },
     'VolanteKafka.subscribe'(topic, callback) {
