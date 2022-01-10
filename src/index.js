@@ -1,16 +1,15 @@
 const { Kafka, CompressionTypes, logLevel } = require('kafkajs');
 
 //
-// Class manages a kafka connection and produces kafka messages based on
-// Volante events.
+// Kakfa for Volante
 //
 module.exports = {
   name: 'VolanteKafka',
   props: {
-    enabled: true,                      // flag to disable auto-init
-    brokers: ['kafka-headless:9092'],   // array of brokers into kafka cluster
-    compression: CompressionTypes.GZIP, // compression to use for published messages, uses kafkajs types
-    groupId: null,                      // specify groupId, default: volante hub name will be used
+    enabled: true,                      // flag to disable auto-init with volante config
+    brokers: ['kafka-headless:9092'],   // array of brokers (host:port) into kafka cluster
+    compression: CompressionTypes.GZIP, // compression to use for published messages, uses kafkajs enum
+    groupId: null,                      // specify groupId, default: volante hub name will be used, so set this to your app name
     clientId: null,                     // specify clientId, default: volante hub name + hostname
     countLogInterval: 10000,            // interval in ms at which to log msg counts
     publishStar: false,                 // subscribe to all volante events and publish them to kafka
@@ -20,11 +19,9 @@ module.exports = {
     totalPublishedMessages: 0,
     totalReceivedMessages: 0,
     numSubscriptions: 0,
+    publishedVolanteEvents: 0,
   },
   init() {
-    if (this.configProps && this.enabled) {
-      this.initialize();
-    }
     // set up counter logging timer
     setInterval(this.logCounts, this.countLogInterval);
   },
@@ -40,6 +37,7 @@ module.exports = {
   },
   events: {
     'VolanteKafka.start'() {
+      this.enabled = true;
       this.initialize();
     },
     'VolanteKafka.publish'(topic, msg, callback) {
@@ -50,19 +48,26 @@ module.exports = {
     },
   },
   updated() {
+    if (this.enabled) {
+      this.initialize();
+    }
     if (this.publishStar) {
-      this.$warn('subcribing to all volante events');
-      // this.$hub.onAll(this.name, (...arguments) => {
-      //   console.log(arguments)
-      // });
+      this.$warn('subcribing to all volante events, this could have performance implications');
+      // tell the hub we want everything
+      this.$hub.onAll(this.name, this.publishVolanteEvent);
     }
   },
   methods: {
     initialize() {
+      if (!this.brokers || this.brokers.length === 0) {
+        this.$warn('tried to initialize but there are no brokers configured');
+        return;
+      }
       // default the groupId and clientId if they werent specified
       this.groupId = this.groupId || this.$hub.name; // use the hub name for id
-      // append the hostname to identify this instance 
+      // append the hostname to identify this instance
       this.clientId = this.clientId || `${this.$hub.name}-${require('os').hostname()}`;
+      this.$log(`using groupId: ${this.groupId} and clientId/volanteId: ${this.clientId}`);
 
       try {
         this.$log(`setting up kafka brokers: ${this.brokers}`);
@@ -82,6 +87,7 @@ module.exports = {
           this.$error('Kafka producer can\'t connect to broker', e.name, e);
         });
         this.producer.on(this.producer.events.CONNECT, () => {
+          // signal that we are ready
           this.$ready(`Producer connected to Kafka at ${this.brokers}`);
         });
       } catch (e) {
@@ -92,8 +98,8 @@ module.exports = {
     // publish a message to Kafka
     //
     publish(topic, msg, callback) {
-      this.$isDebug && this.$debug(`publishing message with length ${msg.length} to ${topic}`);
-      this.producer.send({
+      // don't log in this function to avoid loops
+      this.producer && this.producer.send({
         topic,
         compression: this.compression,
         messages: [{ value: msg }],
@@ -102,7 +108,12 @@ module.exports = {
         this.totalPublishedMessages++;
         callback && callback(null);
       }).catch((e) => {
-        this.$warn(e);
+        if (this.publishStar) {
+          // log to bare console to avoid loops
+          console.error(e);
+        } else {
+          this.$warn(e);
+        }
         callback && callback(e);
       });
     },
@@ -130,6 +141,23 @@ module.exports = {
       }
     },
     //
+    // Handler for publishing wildcard volante events
+    //
+    publishVolanteEvent(eventType, ...eventArgs) {
+      if (this.$isReady) {
+        let obj = {
+          Timestamp: new Date().toISOString(),
+          VolanteName: this.groupId,
+          VolanteId: this.clientId,
+          EventType: eventType,
+          EventArgs: eventArgs,
+        };
+        this.publish(this.publishStarTopic, JSON.stringify(obj), () => {
+          this.publishedVolanteEvents++;
+        });
+      }
+    },
+    //
     // periodically log the message counts
     //
     logCounts() {
@@ -139,29 +167,3 @@ module.exports = {
     },
   },
 };
-
-// standalone/test code
-if (require.main === module) {
-  console.log('running test volante wheel');
-  const volante = require('volante');
-
-  let hub = new volante.Hub().debug();
-  hub.attachAll().attachFromObject(module.exports);
-  
-  if (process.env.volante_VolanteKafka_brokers) {
-    hub.emit('VolanteKafka.update', {
-      brokers: [process.env.volante_VolanteKafka_brokers],
-      publishStar: true,
-    });
-  }
-  
-  hub.emit('VolanteKafka.start');
-  
-  hub.on('VolanteKafka.ready', () => {
-    hub.emit('VolanteKafka.subscribe', 'test', (obj) => {
-      console.log(`received message with offset: ${obj.message.offset} - value length: ${obj.message.value.length}`);
-    });
-    hub.emit('VolanteKafka.publish', 'test', 'test string');
-    // hub.emit('VolanteKafka.publish', 'test', require('crypto').randomBytes(100000000));
-  });
-}

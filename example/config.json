@@ -1,0 +1,15 @@
+{
+  "name": "KafkaTest",
+  "debug": true,
+  "attach": [
+    "volante-console"
+  ],
+  "attachLocal": [
+    "./src",
+    "./example/example"
+  ],
+  "VolanteKafka": {
+    "brokers": [],
+    "publishStar": true
+  }
+}
