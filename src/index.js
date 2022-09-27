@@ -11,7 +11,6 @@ module.exports = {
     compression: CompressionTypes.GZIP, // compression to use for published messages, uses kafkajs enum
     groupId: null,                      // specify groupId, default: volante hub name will be used, so set this to your app name
     clientId: null,                     // specify clientId, default: volante hub name + hostname
-    countLogInterval: 10000,            // interval in ms at which to log msg counts
     publishStar: false,                 // subscribe to all volante events and publish them to kafka
     publishStarTopic: 'volante',        // topic to use for publishing all volante events
   },
@@ -21,18 +20,12 @@ module.exports = {
     numSubscriptions: 0,
     publishedVolanteEvents: 0,
   },
-  init() {
-    // set up counter logging timer
-    setInterval(this.logCounts, this.countLogInterval);
-  },
   data() {
     return {
       kafka: null,
       admin: null,
       producer: null,
       consumer: null,
-      intervalPublishedMessages: 0,
-      intervalReceivedMessages: 0,
     };
   },
   events: {
@@ -156,14 +149,6 @@ module.exports = {
           this.publishedVolanteEvents++;
         });
       }
-    },
-    //
-    // periodically log the message counts
-    //
-    logCounts() {
-      this.$log(`published: ${this.intervalPublishedMessages}|received: ${this.intervalReceivedMessages}`);
-      this.intervalPublishedMessages = 0;
-      this.intervalReceivedMessages = 0;
     },
   },
 };
