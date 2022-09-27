@@ -1,6 +1,6 @@
 {
   "name": "volante-kafka",
-  "version": "7.1.0",
+  "version": "7.2.0",
   "description": "volante bridge to kafka",
   "author": "Mike Smiley <msmiley@alumni.rice.edu>",
   "url": "https://github.com/msmiley/volante-kafka",
